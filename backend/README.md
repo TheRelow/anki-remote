@@ -18,7 +18,7 @@ HOST=0.0.0.0 PORT=8787 JWT_SECRET='...' npm run dev
 # HOST=0.0.0.0 PORT=8787 \
 # SSL_CERT_PATH='./certs/localhost+3.pem' \
 # SSL_KEY_PATH='./certs/localhost+3-key.pem' \
-# CORS_ORIGINS='https://dixie-test.ru' \
+# CORS_ORIGINS='https://dixie-test.ru,http://localhost:5173' \
 # JWT_SECRET='...' npm run dev
 #
 # Backend will start on https://<host>:8787

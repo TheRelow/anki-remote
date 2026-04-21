@@ -1,7 +1,7 @@
 import type { Grade } from './types.js';
 
 export type CardRow = {
-  status: 'learning' | 'review';
+  status: 'new' | 'learning' | 'review';
   step: number;
   dueDate: number;
   interval: number;
@@ -16,6 +16,13 @@ const LEARNING_STEPS = [1 * MINUTE, 10 * MINUTE];
 export function calculateNextReview(card: CardRow, grade: Grade): CardRow {
   let { status, step, interval, repetition, efactor } = card;
   let dueDate = Date.now();
+
+  if (status === 'new') {
+    status = 'learning';
+    step = 0;
+    interval = 0;
+    repetition = 0;
+  }
 
   if (status === 'learning') {
     if (grade === 'again') {

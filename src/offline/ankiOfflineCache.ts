@@ -100,6 +100,7 @@ export function pickDueCardsFromSnapshot(
   now: number
 ): Card[] {
   const rows = Object.values(snap.cardsById).filter((c) => {
+    if (c.status === 'new') return false;
     if (c.dueDate > now) return false;
     if (deckId !== 'all' && c.deckId !== deckId) return false;
     return true;

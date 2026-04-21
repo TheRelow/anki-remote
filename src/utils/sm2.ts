@@ -12,6 +12,13 @@ export function calculateNextReview(card: Card, grade: Grade): Partial<Card> {
     let { status, step, interval, repetition, efactor } = card;
     let dueDate = Date.now();
 
+    if (status === 'new') {
+        status = 'learning';
+        step = 0;
+        interval = 0;
+        repetition = 0;
+    }
+
     // ==========================================
     // ФАЗА 1: LEARNING (Изучение - короткие шаги)
     // ==========================================

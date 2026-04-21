@@ -34,7 +34,10 @@ export async function registerRoutes(app: FastifyInstance, db: DatabaseSync): Pr
       const rows = db
         .prepare(
           `SELECT d.id, d.name, d.created_at AS createdAt,
-                  COALESCE(SUM(CASE WHEN c.due_date <= ? THEN 1 ELSE 0 END), 0) AS dueCount
+                  COALESCE(SUM(CASE
+                    WHEN c.status != 'new' AND c.due_date <= ? THEN 1
+                    ELSE 0
+                  END), 0) AS dueCount
            FROM decks d
            LEFT JOIN cards c ON c.deck_id = d.id AND c.user_id = d.user_id
            WHERE d.user_id = ?
@@ -115,7 +118,7 @@ export async function registerRoutes(app: FastifyInstance, db: DatabaseSync): Pr
         SELECT id, deck_id AS deckId, front, back, status, step, due_date AS dueDate,
                interval, repetition, efactor
         FROM cards
-        WHERE user_id = ? AND due_date <= ? ${deckSql} ${cursorSql}
+        WHERE user_id = ? AND status != 'new' AND due_date <= ? ${deckSql} ${cursorSql}
         ORDER BY due_date ASC, id ASC
         LIMIT ?
       `;
@@ -126,13 +129,36 @@ export async function registerRoutes(app: FastifyInstance, db: DatabaseSync): Pr
         deckId: string;
         front: string;
         back: string;
-        status: 'learning' | 'review';
+        status: 'new' | 'learning' | 'review';
         step: number;
         dueDate: number;
         interval: number;
         repetition: number;
         efactor: number;
       }>;
+
+      if (rows.length === 0) {
+        const newParams: (string | number)[] = [userId];
+        let newDeckSql = '';
+        if (deckId) {
+          newDeckSql = ' AND deck_id = ? ';
+          newParams.push(deckId);
+        }
+        newParams.push(limit);
+        const newRows = db
+          .prepare(
+            `
+            SELECT id, deck_id AS deckId, front, back, status, step, due_date AS dueDate,
+                   interval, repetition, efactor
+            FROM cards
+            WHERE user_id = ? AND status = 'new' ${newDeckSql}
+            ORDER BY created_at ASC, id ASC
+            LIMIT ?
+            `
+          )
+          .all(...newParams) as typeof rows;
+        return { cards: newRows, nextCursor: null };
+      }
 
       const last = rows[rows.length - 1];
       const nextCursor =
@@ -158,17 +184,20 @@ export async function registerRoutes(app: FastifyInstance, db: DatabaseSync): Pr
         return;
       }
       const id = randomUUID();
-      const dueDate = Date.now();
+      const dueDate = 0;
+      const createdAt = Date.now();
       db.prepare(
-        `INSERT INTO cards (id, user_id, deck_id, front, back, status, step, due_date, interval, repetition, efactor)
-         VALUES (?, ?, ?, ?, ?, 'learning', 0, ?, 0, 0, 2.5)`
-      ).run(id, userId, deckId, front.trim(), back.trim(), dueDate);
+        `INSERT INTO cards (
+          id, user_id, deck_id, front, back, status, step, due_date, created_at, interval, repetition, efactor
+        )
+         VALUES (?, ?, ?, ?, ?, 'new', 0, ?, ?, 0, 0, 2.5)`
+      ).run(id, userId, deckId, front.trim(), back.trim(), dueDate, createdAt);
       reply.code(201).send({
         id,
         deckId,
         front: front.trim(),
         back: back.trim(),
-        status: 'learning',
+        status: 'new',
         step: 0,
         dueDate,
         interval: 0,
@@ -237,7 +266,7 @@ export async function registerRoutes(app: FastifyInstance, db: DatabaseSync): Pr
             deckId: string;
             front: string;
             back: string;
-            status: 'learning' | 'review';
+            status: 'new' | 'learning' | 'review';
             step: number;
             dueDate: number;
             interval: number;

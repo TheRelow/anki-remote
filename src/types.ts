@@ -13,7 +13,7 @@ export interface Card {
     back: string;
 
     // --- Логика интервальных повторений (Anki-style) ---
-    status: 'learning' | 'review'; // В какой фазе карточка
+    status: 'new' | 'learning' | 'review'; // В какой фазе карточка
     step: number;       // Текущий шаг в фазе learning (индекс массива)
 
     dueDate: number;    // Timestamp следующего показа
