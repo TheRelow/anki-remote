@@ -2,20 +2,34 @@ export interface Deck {
     id: string;
     name: string;
     createdAt: number;
+    /** С сервера: сколько карточек к повторению сейчас */
+    dueCount?: number;
 }
 
 export interface Card {
     id: string;
     deckId: string;
-    front: string; // Вопрос (лицевая сторона)
-    back: string;  // Ответ (обратная сторона)
+    front: string;
+    back: string;
 
-    // --- Логика интервальных повторений (Spaced Repetition) ---
-    dueDate: number;    // Timestamp (в миллисекундах), когда карточку нужно показать снова
-    interval: number;   // Текущий интервал в днях
+    // --- Логика интервальных повторений (Anki-style) ---
+    status: 'learning' | 'review'; // В какой фазе карточка
+    step: number;       // Текущий шаг в фазе learning (индекс массива)
+
+    dueDate: number;    // Timestamp следующего показа
+    interval: number;   // Интервал (в днях, используется только для 'review')
     repetition: number; // Количество успешных повторений подряд
-    efactor: number;    // E-factor (Коэффициент легкости, по умолчанию 2.5)
+    efactor: number;    // Коэффициент легкости (меняется только в фазе 'review')
 }
 
-// Оценки, которые пользователь ставит при ответе
 export type Grade = 'again' | 'hard' | 'good' | 'easy';
+
+/** Пропсы remote-виджета для host-приложения (module federation) */
+export interface AnkiWidgetHostProps {
+  authToken?: string | null;
+  apiBaseUrl?: string | null;
+  mode?: 'full' | 'training-only';
+  targetDeckId?: string | null;
+  limit?: number;
+  fetchAllDueCards?: boolean;
+}

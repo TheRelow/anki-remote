@@ -1,0 +1,26 @@
+{
+  "name": "anki-remote-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:https": "HOST=0.0.0.0 PORT=8787 SSL_CERT_PATH=./certs/local.pem SSL_KEY_PATH=./certs/local-key.pem CORS_ORIGINS=https://dixie-test.ru tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "mint-token": "node scripts/mint-dev-token.mjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "fastify": "^5.2.1",
+    "jose": "^6.0.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.4",
+    "typescript": "~5.8.3"
+  }
+}

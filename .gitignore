@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+backend/data
+backend/node_modules
+backend/dist
+.pnpm-store
