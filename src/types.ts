@@ -1,6 +1,20 @@
+export type DeckFieldType = 'text' | 'url' | 'number' | 'markdown';
+
+export interface DeckFieldDefinition {
+    id: string;
+    type: DeckFieldType;
+    required?: boolean;
+}
+
+export interface DeckFieldSchema {
+    version: number;
+    fields: DeckFieldDefinition[];
+}
+
 export interface Deck {
     id: string;
     name: string;
+    fieldSchema?: DeckFieldSchema;
     createdAt: number;
     /** С сервера: сколько карточек к повторению сейчас */
     dueCount?: number;
@@ -11,6 +25,7 @@ export interface Card {
     deckId: string;
     front: string;
     back: string;
+    fields: Record<string, string>;
 
     // --- Логика интервальных повторений (Anki-style) ---
     status: 'new' | 'learning' | 'review'; // В какой фазе карточка

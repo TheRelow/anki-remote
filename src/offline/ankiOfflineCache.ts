@@ -122,3 +122,33 @@ export function recomputeDeckDueCounts(snap: OfflineSnapshot, now: number): Deck
     dueCount: dueCountForDeckInSnapshot(snap, d.id, now),
   }));
 }
+
+/**
+ * Набор карточек для офлайн-тренировки:
+ * 1) сначала due (без new), 2) затем остальные (включая new) до нужного лимита.
+ */
+export function pickTrainingCardsFromSnapshot(
+  snap: OfflineSnapshot,
+  deckId: string | 'all',
+  now: number,
+  limit: number
+): Card[] {
+  const all = Object.values(snap.cardsById).filter((c) => deckId === 'all' || c.deckId === deckId);
+
+  const due = all
+    .filter((c) => c.status !== 'new' && c.dueDate <= now)
+    .sort((a, b) => {
+      if (a.dueDate !== b.dueDate) return a.dueDate - b.dueDate;
+      return a.id.localeCompare(b.id);
+    });
+
+  const dueIds = new Set(due.map((c) => c.id));
+  const rest = all
+    .filter((c) => !dueIds.has(c.id))
+    .sort((a, b) => {
+      if (a.dueDate !== b.dueDate) return a.dueDate - b.dueDate;
+      return a.id.localeCompare(b.id);
+    });
+
+  return [...due, ...rest].slice(0, Math.max(0, limit));
+}

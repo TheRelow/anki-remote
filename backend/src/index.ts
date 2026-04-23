@@ -5,6 +5,21 @@ import { openDatabase } from './db.js';
 import { buildServer } from './app.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const envCandidates = [
+  join(__dirname, '..', '.env'),
+  join(__dirname, '..', '..', '.env'),
+];
+
+if (typeof process.loadEnvFile === 'function') {
+  for (const envPath of envCandidates) {
+    try {
+      process.loadEnvFile(envPath);
+    } catch {
+      // Ignore missing env files and continue.
+    }
+  }
+}
+
 const defaultDb = join(__dirname, '..', 'data', 'anki.sqlite');
 const dbPath = process.env.DATABASE_PATH ?? defaultDb;
 const certPath = process.env.SSL_CERT_PATH;

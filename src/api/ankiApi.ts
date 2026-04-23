@@ -1,4 +1,4 @@
-import type { Card, Deck, Grade } from '../types';
+import type { Card, Deck, DeckFieldSchema, Grade } from '../types';
 
 export function defaultApiBase(): string {
   const v = import.meta.env.VITE_ANKI_API_BASE;
@@ -10,6 +10,10 @@ export function defaultApiBase(): string {
 export type DueCardsResponse = {
   cards: Card[];
   nextCursor: string | null;
+};
+
+export type TrainingCardsResponse = {
+  cards: Card[];
 };
 
 export type DecksResponse = {
@@ -62,18 +66,18 @@ export function createAnkiApi(getToken: () => string | null, getBase: () => stri
       return request<DecksResponse>('/decks');
     },
 
-    async createDeck(name: string): Promise<Deck> {
-      const r = await request<{ id: string; name: string; createdAt: number }>('/decks', {
+    async createDeck(name: string, fieldSchema?: DeckFieldSchema): Promise<Deck> {
+      const r = await request<{ id: string; name: string; fieldSchema?: DeckFieldSchema; createdAt: number }>('/decks', {
         method: 'POST',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, fieldSchema }),
       });
-      return { id: r.id, name: r.name, createdAt: r.createdAt };
+      return { id: r.id, name: r.name, fieldSchema: r.fieldSchema, createdAt: r.createdAt };
     },
 
-    async updateDeck(id: string, name: string): Promise<void> {
+    async updateDeck(id: string, payload: { name?: string; fieldSchema?: DeckFieldSchema }): Promise<void> {
       await request(`/decks/${encodeURIComponent(id)}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(payload),
       });
     },
 
@@ -94,10 +98,23 @@ export function createAnkiApi(getToken: () => string | null, getBase: () => stri
       return request<DueCardsResponse>(`/cards/due${qs ? `?${qs}` : ''}`);
     },
 
-    async createCard(deckId: string, front: string, back: string): Promise<Card> {
+    async fetchTrainingCards(params: {
+      deckId?: string | null;
+      limit: number;
+    }): Promise<TrainingCardsResponse> {
+      const q = new URLSearchParams();
+      if (params.deckId && params.deckId !== 'all') {
+        q.set('deckId', params.deckId);
+      }
+      q.set('limit', String(params.limit));
+      const qs = q.toString();
+      return request<TrainingCardsResponse>(`/cards/training${qs ? `?${qs}` : ''}`);
+    },
+
+    async createCard(deckId: string, fields: Record<string, string>): Promise<Card> {
       return request<Card>('/cards', {
         method: 'POST',
-        body: JSON.stringify({ deckId, front, back }),
+        body: JSON.stringify({ deckId, fields }),
       });
     },
 

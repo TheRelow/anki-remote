@@ -1,6 +1,6 @@
 <!-- src/components/CardWorker.vue -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useAnkiStore } from '../store/ankiStore'
 import BaseInput from './BaseInput.vue'
 import BaseButton from './BaseButton.vue'
@@ -13,20 +13,48 @@ const props = defineProps<{
 const store = useAnkiStore()
 
 const selectedDeckId = ref(props.deckId || '')
-const frontText = ref('')
-const backText = ref('')
+const fieldValues = ref<Record<string, string>>({})
+
+const selectedDeck = computed(() => store.decks.find((d) => d.id === selectedDeckId.value) ?? null)
+const deckFields = computed(() => {
+  const schema = selectedDeck.value?.fieldSchema;
+  if (!schema?.fields?.length) {
+    return [
+      { id: 'front', type: 'text', required: true },
+      { id: 'back', type: 'text', required: true },
+    ];
+  }
+  return schema.fields;
+})
+
+function fieldLabel(fieldId: string): string {
+  if (fieldId === 'front') return 'Лицевая сторона (Вопрос)';
+  if (fieldId === 'back') return 'Обратная сторона (Ответ)';
+  return fieldId;
+}
 
 async function saveCard() {
-  if (!selectedDeckId.value || !frontText.value || !backText.value) {
-    alert('Заполните все поля!')
+  if (!selectedDeckId.value) {
+    alert('Выберите колоду!');
+    return
+  }
+  const fields: Record<string, string> = {};
+  for (const field of deckFields.value) {
+    const value = (fieldValues.value[field.id] ?? '').trim();
+    if (field.required && !value) {
+      alert(`Поле "${fieldLabel(field.id)}" обязательно`);
+      return;
+    }
+    if (value) fields[field.id] = value;
+  }
+  if (Object.keys(fields).length === 0) {
+    alert('Заполните хотя бы одно поле');
     return
   }
 
   try {
-    await store.addCard(selectedDeckId.value, frontText.value, backText.value)
-
-    frontText.value = ''
-    backText.value = ''
+    await store.addCard(selectedDeckId.value, fields)
+    fieldValues.value = {}
     alert('Карточка добавлена!')
   } catch {
     alert(store.lastError || 'Ошибка сохранения')
@@ -46,8 +74,14 @@ async function saveCard() {
       </select>
     </div>
 
-    <BaseInput v-model="frontText" label="Лицевая сторона (Вопрос)" multiline />
-    <BaseInput v-model="backText" label="Обратная сторона (Ответ)" multiline />
+    <BaseInput
+      v-for="field in deckFields"
+      :key="field.id"
+      v-model="fieldValues[field.id]"
+      :label="fieldLabel(field.id)"
+      :placeholder="field.required ? 'Обязательное поле' : 'Необязательное поле'"
+      multiline
+    />
 
     <BaseButton block variant="success" @click="saveCard" style="margin-top: 10px;">
       Сохранить карточку

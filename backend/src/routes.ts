@@ -167,6 +167,63 @@ export async function registerRoutes(app: FastifyInstance, db: DatabaseSync): Pr
       return { cards: rows, nextCursor };
     });
 
+    protectedRoutes.get<{
+      Querystring: {
+        deckId?: string;
+        limit?: string;
+      };
+    }>('/cards/training', async (request, reply) => {
+      const userId = request.authUser!.sub;
+      const now = Date.now();
+      const deckId = request.query.deckId?.trim() || undefined;
+      let limit = parseInt(request.query.limit ?? '100', 10);
+      if (Number.isNaN(limit) || limit < 0) limit = 100;
+      if (limit > 1_000) limit = 1_000;
+
+      const params: (string | number)[] = [userId];
+      let deckSql = '';
+      if (deckId) {
+        deckSql = ' AND deck_id = ? ';
+        params.push(deckId);
+      }
+      params.push(now, now, limit);
+
+      const rows = db
+        .prepare(
+          `
+          SELECT id, deck_id AS deckId, front, back, status, step, due_date AS dueDate,
+                 interval, repetition, efactor
+          FROM cards
+          WHERE user_id = ? ${deckSql}
+          ORDER BY
+            CASE
+              WHEN status != 'new' AND due_date <= ? THEN 0
+              ELSE 1
+            END ASC,
+            CASE
+              WHEN status != 'new' AND due_date <= ? THEN due_date
+              ELSE created_at
+            END ASC,
+            id ASC
+          LIMIT ?
+          `
+        )
+        .all(...params) as Array<{
+        id: string;
+        deckId: string;
+        front: string;
+        back: string;
+        status: 'new' | 'learning' | 'review';
+        step: number;
+        dueDate: number;
+        interval: number;
+        repetition: number;
+        efactor: number;
+      }>;
+
+      return { cards: rows };
+    });
+
     protectedRoutes.post<{
       Body: { deckId?: string; front?: string; back?: string };
     }>('/cards', async (request, reply) => {

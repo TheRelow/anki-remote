@@ -19,6 +19,22 @@ function normalizeToOrigin(value: string): string {
   }
 }
 
+function isLocalDevOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    return (
+      url.hostname === 'localhost' ||
+      url.hostname.endsWith('.localhost') ||
+      url.hostname === '127.0.0.1' ||
+      url.hostname === '::1' ||
+      url.hostname === '[::1]'
+    );
+  } catch {
+    return false;
+  }
+}
+
 function buildCorsOptions(): FastifyCorsOptions {
   const raw = process.env.CORS_ORIGINS?.trim();
   const allowedOrigins = new Set(
@@ -31,18 +47,26 @@ function buildCorsOptions(): FastifyCorsOptions {
   );
 
   if (process.env.NODE_ENV !== 'production') {
+    allowedOrigins.add('http://localhost:5174');
     allowedOrigins.add('http://localhost:5173');
     allowedOrigins.add('http://127.0.0.1:5173');
+    allowedOrigins.add('http://127.0.0.1:5174');
   }
 
   const hasConfiguredOrigins = allowedOrigins.size > 0;
+  const allowAnyLocalDevOrigin = process.env.NODE_ENV !== 'production';
 
   return {
     // If CORS_ORIGINS is unset, keep permissive behavior for local development.
     origin: hasConfiguredOrigins
       ? (origin, cb) => {
           if (!origin) return cb(null, true);
-          cb(null, allowedOrigins.has(normalizeToOrigin(origin)));
+          const normalizedOrigin = normalizeToOrigin(origin);
+          cb(
+            null,
+            allowedOrigins.has(normalizedOrigin) ||
+              (allowAnyLocalDevOrigin && isLocalDevOrigin(normalizedOrigin))
+          );
         }
       : true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],

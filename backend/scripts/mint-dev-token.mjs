@@ -15,7 +15,7 @@ const sub = process.argv[2] || 'dev-user';
 const token = await new SignJWT({ sub })
   .setProtectedHeader({ alg: 'HS256' })
   .setIssuedAt()
-  .setExpirationTime('24h')
+  .setExpirationTime('90d')
   .sign(secret);
 
 console.log(token);

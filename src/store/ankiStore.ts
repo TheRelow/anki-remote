@@ -1,7 +1,7 @@
 // src/store/ankiStore.ts
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { Deck, Card, Grade } from '../types';
+import type { Deck, Card, DeckFieldSchema, Grade } from '../types';
 import { createAnkiApi, defaultApiBase } from '../api/ankiApi';
 import { calculateNextReview } from '../utils/sm2';
 import {
@@ -14,12 +14,14 @@ import {
   enqueueReview,
   shiftPendingReview,
   pickDueCardsFromSnapshot,
+  pickTrainingCardsFromSnapshot,
   recomputeDeckDueCounts,
   type OfflineSnapshot,
 } from '../offline/ankiOfflineCache';
 
 const PREFETCH_LIMIT = 100;
 const REFILL_THRESHOLD = 20;
+const OFFLINE_TRAINING_TARGET = 100;
 
 function isLikelyNetworkError(e: unknown): boolean {
   if (e instanceof TypeError) return true;
@@ -114,6 +116,7 @@ export const useAnkiStore = defineStore('ankiStore', () => {
       decks.value = rows.map((d) => ({
         id: d.id,
         name: d.name,
+        fieldSchema: d.fieldSchema,
         createdAt: d.createdAt,
         dueCount: d.dueCount,
       }));
@@ -139,6 +142,7 @@ export const useAnkiStore = defineStore('ankiStore', () => {
       decks.value = rows.map((d) => ({
         id: d.id,
         name: d.name,
+        fieldSchema: d.fieldSchema,
         createdAt: d.createdAt,
         dueCount: d.dueCount,
       }));
@@ -161,11 +165,11 @@ export const useAnkiStore = defineStore('ankiStore', () => {
     }
   }
 
-  async function addDeck(name: string): Promise<void> {
+  async function addDeck(name: string, fieldSchema?: DeckFieldSchema): Promise<void> {
     clearError();
     isLoading.value = true;
     try {
-      const d = await api.value.createDeck(name);
+      const d = await api.value.createDeck(name, fieldSchema);
       decks.value.push({ ...d, dueCount: 0 });
       const snap = replaceDecksInSnapshot(getSnap(), decks.value);
       persistSnapshot(snap);
@@ -177,13 +181,14 @@ export const useAnkiStore = defineStore('ankiStore', () => {
     }
   }
 
-  async function updateDeck(deckId: string, name: string): Promise<void> {
+  async function updateDeck(deckId: string, payload: { name?: string; fieldSchema?: DeckFieldSchema }): Promise<void> {
     clearError();
     isLoading.value = true;
     try {
-      await api.value.updateDeck(deckId, name);
+      await api.value.updateDeck(deckId, payload);
       const d = decks.value.find((x) => x.id === deckId);
-      if (d) d.name = name;
+      if (d && payload.name) d.name = payload.name;
+      if (d && payload.fieldSchema) d.fieldSchema = payload.fieldSchema;
       const snap = replaceDecksInSnapshot(getSnap(), decks.value);
       persistSnapshot(snap);
     } catch (e) {
@@ -194,11 +199,11 @@ export const useAnkiStore = defineStore('ankiStore', () => {
     }
   }
 
-  async function addCard(deckId: string, front: string, back: string): Promise<void> {
+  async function addCard(deckId: string, fields: Record<string, string>): Promise<void> {
     clearError();
     isLoading.value = true;
     try {
-      const created = await api.value.createCard(deckId, front, back);
+      const created = await api.value.createCard(deckId, fields);
       const snap = mergeCardsIntoSnapshot(getSnap(), [created]);
       persistSnapshot(snap);
       await loadDecks();
@@ -220,7 +225,10 @@ export const useAnkiStore = defineStore('ankiStore', () => {
   function buildOfflineTrainingQueues(deckId: string | 'all'): { initial: Card[]; rest: Card[] } {
     const snap = getSnap();
     const now = Date.now();
-    const due = pickDueCardsFromSnapshot(snap, deckId, now);
+    const due =
+      deckId === 'all'
+        ? pickTrainingCardsFromSnapshot(snap, deckId, now, OFFLINE_TRAINING_TARGET)
+        : pickDueCardsFromSnapshot(snap, deckId, now);
     return {
       initial: due.slice(0, PREFETCH_LIMIT),
       rest: due.slice(PREFETCH_LIMIT),
@@ -240,16 +248,39 @@ export const useAnkiStore = defineStore('ankiStore', () => {
 
     const tryNetwork = async (): Promise<boolean> => {
       try {
-        const first = await api.value.fetchDueCards({
+        const queue: Card[] = [];
+        const queueIds = new Set<string>();
+        const target =
+          deckId === 'all' ? OFFLINE_TRAINING_TARGET : PREFETCH_LIMIT;
+        const page = await api.value.fetchTrainingCards({
           deckId: deckId === 'all' ? null : deckId,
-          limit: PREFETCH_LIMIT,
-          cursor: null,
-          all: trainingFetchAll.value,
+          limit: target,
         });
-        const snap = mergeCardsIntoSnapshot(getSnap(), first.cards);
+        for (const card of page.cards) {
+          if (queueIds.has(card.id)) continue;
+          queue.push(card);
+          queueIds.add(card.id);
+        }
+
+        let snap = mergeCardsIntoSnapshot(getSnap(), queue);
+        if (deckId === 'all' && queue.length < OFFLINE_TRAINING_TARGET) {
+          const fallback = pickTrainingCardsFromSnapshot(
+            snap,
+            'all',
+            Date.now(),
+            OFFLINE_TRAINING_TARGET
+          );
+          for (const card of fallback) {
+            if (queueIds.has(card.id)) continue;
+            queue.push(card);
+            queueIds.add(card.id);
+          }
+          snap = mergeCardsIntoSnapshot(snap, queue);
+        }
+
         persistSnapshot(snap);
-        trainingQueue.value = [...first.cards];
-        dueNextCursor.value = first.nextCursor;
+        trainingQueue.value = queue.slice(0, target);
+        dueNextCursor.value = null;
         offlineDueBuffer.value = [];
         try {
           await flushPendingReviews();
@@ -288,6 +319,7 @@ export const useAnkiStore = defineStore('ankiStore', () => {
   }
 
   async function maybeRefillTrainingQueue(): Promise<void> {
+    if (trainingDeckId.value === 'all') return;
     if (trainingQueue.value.length > REFILL_THRESHOLD) return;
 
     if (offlineDueBuffer.value.length > 0) {
@@ -299,27 +331,36 @@ export const useAnkiStore = defineStore('ankiStore', () => {
       return;
     }
 
-    if (!dueNextCursor.value) return;
-
     clearError();
     try {
       const deckId = trainingDeckId.value;
-      const more = await api.value.fetchDueCards({
-        deckId: deckId && deckId !== 'all' ? deckId : null,
-        limit: PREFETCH_LIMIT,
-        cursor: dueNextCursor.value,
-        all: trainingFetchAll.value,
-      });
-      const snap = mergeCardsIntoSnapshot(getSnap(), more.cards);
+      const loaded =
+        dueNextCursor.value
+          ? await api.value.fetchDueCards({
+              deckId: deckId && deckId !== 'all' ? deckId : null,
+              limit: PREFETCH_LIMIT,
+              cursor: dueNextCursor.value,
+              all: trainingFetchAll.value,
+            })
+          : {
+              cards: (
+                await api.value.fetchTrainingCards({
+                  deckId: deckId && deckId !== 'all' ? deckId : null,
+                  limit: PREFETCH_LIMIT,
+                })
+              ).cards,
+              nextCursor: null,
+            };
+      const snap = mergeCardsIntoSnapshot(getSnap(), loaded.cards);
       persistSnapshot(snap);
       const existing = new Set(trainingQueue.value.map((c) => c.id));
-      for (const c of more.cards) {
+      for (const c of loaded.cards) {
         if (!existing.has(c.id)) {
           trainingQueue.value.push(c);
           existing.add(c.id);
         }
       }
-      dueNextCursor.value = more.nextCursor;
+      dueNextCursor.value = loaded.nextCursor;
     } catch (e) {
       lastError.value = e instanceof Error ? e.message : String(e);
     }
