@@ -1,4 +1,5 @@
 import type { Card, Deck, Grade } from '../types';
+import type { SyncOperation } from '../api/ankiApi';
 
 const STORAGE_VERSION = 1 as const;
 const STORAGE_PREFIX = 'anki-remote:offline:';
@@ -14,6 +15,7 @@ export type OfflineSnapshot = {
   decks: Deck[];
   cardsById: Record<string, Card>;
   pendingReviews: PendingReview[];
+  pendingOps: SyncOperation[];
 };
 
 function storageKeyForToken(token: string): string {
@@ -31,6 +33,7 @@ export function emptySnapshot(): OfflineSnapshot {
     decks: [],
     cardsById: {},
     pendingReviews: [],
+    pendingOps: [],
   };
 }
 
@@ -44,6 +47,18 @@ export function loadSnapshot(token: string | null): OfflineSnapshot | null {
       return null;
     }
     if (!Array.isArray(o.pendingReviews)) o.pendingReviews = [];
+    if (!Array.isArray(o.pendingOps)) o.pendingOps = [];
+    // Legacy migration: old snapshot had pendingReviews only.
+    if (o.pendingOps.length === 0 && o.pendingReviews.length > 0) {
+      o.pendingOps = o.pendingReviews.map((row, idx) => ({
+        opId: `legacy-review-${row.cardId}-${row.enqueuedAt}-${idx}`,
+        type: 'review-submit',
+        entityId: row.cardId,
+        payload: { cardId: row.cardId, grade: row.grade },
+        clientTs: row.enqueuedAt,
+        attempts: 0,
+      }));
+    }
     return o;
   } catch {
     return null;
@@ -89,6 +104,29 @@ export function enqueueReview(snap: OfflineSnapshot, cardId: string, grade: Grad
 export function shiftPendingReview(snap: OfflineSnapshot): OfflineSnapshot {
   const [, ...rest] = snap.pendingReviews;
   return { ...snap, pendingReviews: rest };
+}
+
+export function enqueuePendingOp(snap: OfflineSnapshot, op: SyncOperation): OfflineSnapshot {
+  return {
+    ...snap,
+    pendingOps: [...snap.pendingOps, op],
+  };
+}
+
+export function removePendingOps(snap: OfflineSnapshot, opIds: string[]): OfflineSnapshot {
+  if (opIds.length === 0) return snap;
+  const excluded = new Set(opIds);
+  return {
+    ...snap,
+    pendingOps: snap.pendingOps.filter((op) => !excluded.has(op.opId)),
+  };
+}
+
+export function replacePendingOp(snap: OfflineSnapshot, nextOp: SyncOperation): OfflineSnapshot {
+  return {
+    ...snap,
+    pendingOps: snap.pendingOps.map((op) => (op.opId === nextOp.opId ? nextOp : op)),
+  };
 }
 
 /**

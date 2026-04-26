@@ -20,6 +20,25 @@ export type DecksResponse = {
   decks: Array<Deck & { dueCount?: number }>;
 };
 
+export type SyncOpType = 'review-submit' | 'deck-create' | 'deck-update' | 'card-create';
+export type SyncOperation = {
+  opId: string;
+  type: SyncOpType;
+  entityId: string;
+  payload: Record<string, unknown>;
+  clientTs: number;
+  attempts?: number;
+};
+export type SyncResultStatus = 'applied' | 'rejected' | 'retryable';
+export type SyncResult = {
+  opId: string;
+  status: SyncResultStatus;
+  error?: string;
+  data?: Record<string, unknown>;
+};
+
+const REQUEST_TIMEOUT_MS = 8000;
+
 async function parseJson<T>(res: Response): Promise<T> {
   const text = await res.text();
   if (!text) return {} as T;
@@ -29,7 +48,7 @@ async function parseJson<T>(res: Response): Promise<T> {
 export function createAnkiApi(getToken: () => string | null, getBase: () => string) {
   async function request<T>(
     path: string,
-    init: RequestInit & { parse?: 'json' | 'none' } = {}
+    init: RequestInit & { parse?: 'json' | 'none'; timeoutMs?: number } = {}
   ): Promise<T> {
     const token = getToken();
     if (!token) {
@@ -44,7 +63,23 @@ export function createAnkiApi(getToken: () => string | null, getBase: () => stri
     if (init.body !== undefined && !('Content-Type' in (headers as Record<string, string>))) {
       (headers as Record<string, string>)['Content-Type'] = 'application/json';
     }
-    const res = await fetch(url, { ...init, headers });
+    const timeoutMs =
+      typeof (init as { timeoutMs?: number }).timeoutMs === 'number'
+        ? Math.max(1, Number((init as { timeoutMs?: number }).timeoutMs))
+        : REQUEST_TIMEOUT_MS;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(new Error('Request timeout')), timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(url, { ...init, headers, signal: ctl.signal });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        throw new Error('Network timeout');
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) {
       let msg = res.statusText;
       try {
@@ -62,6 +97,17 @@ export function createAnkiApi(getToken: () => string | null, getBase: () => stri
   }
 
   return {
+    async ping(): Promise<{ ok: boolean; ts: number }> {
+      return request<{ ok: boolean; ts: number }>('/sync/ping', { timeoutMs: 3000 });
+    },
+
+    async syncBatch(operations: SyncOperation[]): Promise<{ results: SyncResult[] }> {
+      return request<{ results: SyncResult[] }>('/sync/batch', {
+        method: 'POST',
+        body: JSON.stringify({ operations }),
+      });
+    },
+
     async listDecks(): Promise<DecksResponse> {
       return request<DecksResponse>('/decks');
     },

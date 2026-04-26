@@ -48,6 +48,13 @@ function migrate(db: DatabaseSync): void {
       created_at INTEGER NOT NULL,
       FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS sync_applied_ops (
+      user_id TEXT NOT NULL,
+      op_id TEXT NOT NULL,
+      response_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id, op_id)
+    );
   `);
 
   migrateDecksTable(db);

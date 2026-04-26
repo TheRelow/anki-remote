@@ -84,6 +84,19 @@ const headerTitle = computed(() => {
   }
 });
 
+const connectivityLabel = computed(() => {
+  switch (store.connectivityState) {
+    case 'online':
+      return store.syncState === 'syncing' ? 'Синхронизация...' : 'Онлайн';
+    case 'syncing':
+      return 'Синхронизация...';
+    case 'offline':
+      return 'Оффлайн';
+    default:
+      return 'Нестабильная связь';
+  }
+})
+
 function goBack() {
   if (props.mode === 'training-only') return;
 
@@ -118,6 +131,9 @@ function openDeckDetail(deckId: string) {
 
     <div v-else-if="store.showOfflineHint" class="anki-offline-hint">
       Локальные данные: часть информации с устройства; синхронизация при подключении к серверу.
+    </div>
+    <div v-if="!initError" class="anki-sync-status" :data-state="store.connectivityState">
+      Статус: {{ connectivityLabel }}
     </div>
 
     <div class="controls" :style="{ display: (currentScreen === 'menu' || mode === 'training-only') ? 'none' : undefined }">
@@ -227,6 +243,16 @@ function openDeckDetail(deckId: string) {
   border-radius: 8px;
   color: #0369a1;
   font-size: 0.85rem;
+}
+
+.anki-sync-status {
+  padding: 6px 12px;
+  margin: 0 10px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  color: #1e3a8a;
+  font-size: 0.8rem;
+  background: #eff6ff;
 }
 
 .controls {
